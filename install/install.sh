@@ -1,0 +1,1 @@
+ln -s ../html/ /var/www/html/aqi/

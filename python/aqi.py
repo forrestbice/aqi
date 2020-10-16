@@ -3,7 +3,12 @@
 # "DATASHEET": http://cl.ly/ekot
 # https://gist.github.com/kadamski/92653913a53baf9dd1a8
 from __future__ import print_function
-import serial, struct, sys, time, json, subprocess
+
+import json
+import serial
+import struct
+import subprocess
+import time
 
 DEBUG = 0
 CMD_MODE = 2
@@ -17,23 +22,31 @@ MODE_QUERY = 1
 PERIOD_CONTINUOUS = 0
 
 JSON_FILE = '/var/www/html/aqi.json'
+JSON_FILE_OUTDOOR = '/var/www/html/aqi_outdoor.json'
 
 MQTT_HOST = ''
 MQTT_TOPIC = '/weather/particulatematter'
 
-ser = serial.Serial()
-ser.port = "/dev/ttyUSB0"
-ser.baudrate = 9600
+serial = serial.Serial()
+serial.port = "/dev/ttyUSB0"
+serial.baudrate = 9600
+serial.open()
+serial.flushInput()
 
-ser.open()
-ser.flushInput()
+serial_outdoor = serial.Serial()
+serial_outdoor.port = "/dev/ttyUSB1"
+serial_outdoor.baudrate = 9600
+serial_outdoor.open()
+serial_outdoor.flushInput()
 
-byte, data = 0, ""
+#byte, data = 0, ""
 
 def dump(d, prefix=''):
     print(prefix + ' '.join(x.encode('hex') for x in d))
 
-def construct_command(cmd, data=[]):
+def construct_command(cmd, data=None):
+    if data is None:
+        data = []
     assert len(data) <= 12
     data += [0,]*(12-len(data))
     checksum = (sum(data)+cmd-2)%256
@@ -58,7 +71,7 @@ def process_version(d):
     checksum = sum(ord(v) for v in d[2:8])%256
     print("Y: {}, M: {}, D: {}, ID: {}, CRC={}".format(r[0], r[1], r[2], hex(r[3]), "OK" if (checksum==r[4] and r[5]==0xab) else "NOK"))
 
-def read_response():
+def read_response(ser):
     byte = 0
     while byte != "\xaa":
         byte = ser.read(size=1)
@@ -69,37 +82,38 @@ def read_response():
         dump(d, '< ')
     return byte + d
 
-def cmd_set_mode(mode=MODE_QUERY):
+def cmd_set_mode(ser, mode=MODE_QUERY):
     ser.write(construct_command(CMD_MODE, [0x1, mode]))
-    read_response()
+    read_response(ser)
 
-def cmd_query_data():
+def cmd_query_data(ser):
     ser.write(construct_command(CMD_QUERY_DATA))
-    d = read_response()
-    values = []
+    d = read_response(ser)
+    vals = []
     if d[1] == "\xc0":
-        values = process_data(d)
-    return values
+        vals = process_data(d)
+    return vals
 
-def cmd_set_sleep(sleep):
+def cmd_set_sleep(ser, sleep):
     mode = 0 if sleep else 1
     ser.write(construct_command(CMD_SLEEP, [0x1, mode]))
-    read_response()
+    ser.write(construct_command(CMD_SLEEP, [0x1, mode]))
+    read_response(ser)
 
-def cmd_set_working_period(period):
+def cmd_set_working_period(ser, period):
     ser.write(construct_command(CMD_WORKING_PERIOD, [0x1, period]))
-    read_response()
+    read_response(ser)
 
-def cmd_firmware_ver():
+def cmd_firmware_ver(ser):
     ser.write(construct_command(CMD_FIRMWARE))
-    d = read_response()
+    d = read_response(ser)
     process_version(d)
 
-def cmd_set_id(id):
+def cmd_set_id(ser, id):
     id_h = (id>>8) % 256
     id_l = id % 256
-    ser.write(construct_command(CMD_DEVICE_ID, [0]*10+[id_l, id_h]))
-    read_response()
+    ser.write(construct_command(CMD_DEVICE_ID, [0] * 10 + [id_l, id_h]))
+    read_response(ser)
 
 def pub_mqtt(jsonrow):
     cmd = ['mosquitto_pub', '-h', MQTT_HOST, '-t', MQTT_TOPIC, '-s']
@@ -107,42 +121,47 @@ def pub_mqtt(jsonrow):
     with subprocess.Popen(cmd, shell=False, bufsize=0, stdin=subprocess.PIPE).stdin as f:
         json.dump(jsonrow, f)
 
+def do_the_stuff(ser, json_file, sleep_duration):
+    #global data, sleep_time
+    cmd_set_sleep(ser, 0)
+    for t in range(15):
+        values = cmd_query_data(ser)
+        if values is not None and len(values) == 2:
+            print("PM2.5: ", values[0], ", PM10: ", values[1])
+            time.sleep(2)
+    # open stored data
+    try:
+        with open(json_file) as json_data:
+            data = json.load(json_data)
+    except IOError as e:
+        data = []
+    # check if length is more than 100 and delete first element
+    # if len(data) > 100:
+    #    data.pop(0)
+    # append new values
+    jsonrow = {'pm25': values[0], 'pm10': values[1], 'time': time.strftime("%H:%M:%S %m/%d/%Y %Z")}
+    data.append(jsonrow)
+    # save it
+    with open(json_file, 'w') as outfile:
+        json.dump(data, outfile)
+    if MQTT_HOST != '':
+        pub_mqtt(jsonrow)
+    mins = sleep_duration / 60
+    print("Putting ", ser, "to sleep for ", mins, " minutes...")
+    cmd_set_sleep(ser, 1)
+
 
 if __name__ == "__main__":
-    cmd_set_sleep(0)
-    cmd_firmware_ver()
-    cmd_set_working_period(PERIOD_CONTINUOUS)
-    cmd_set_mode(MODE_QUERY);
+    cmd_set_sleep(serial, 0)
+    cmd_set_sleep(serial_outdoor, 0)
+    cmd_firmware_ver(serial)
+    cmd_firmware_ver(serial_outdoor)
+    cmd_set_working_period(serial, PERIOD_CONTINUOUS)
+    cmd_set_working_period(serial_outdoor, PERIOD_CONTINUOUS)
+    cmd_set_mode(serial, MODE_QUERY)
+    cmd_set_mode(serial_outdoor, MODE_QUERY)
     while True:
-        cmd_set_sleep(0)
-        for t in range(15):
-            values = cmd_query_data();
-            if values is not None and len(values) == 2:
-              print("PM2.5: ", values[0], ", PM10: ", values[1])
-              time.sleep(2)
-
-        # open stored data
-        try:
-            with open(JSON_FILE) as json_data:
-                data = json.load(json_data)
-        except IOError as e:
-            data = []
-
-        # check if length is more than 100 and delete first element
-        if len(data) > 100:
-            data.pop(0)
-
-        # append new values
-        jsonrow = {'pm25': values[0], 'pm10': values[1], 'time': time.strftime("%d.%m.%Y %H:%M:%S")}
-        data.append(jsonrow)
-
-        # save it
-        with open(JSON_FILE, 'w') as outfile:
-            json.dump(data, outfile)
-
-        if MQTT_HOST != '':
-            pub_mqtt(jsonrow)
-            
-        print("Going to sleep for 1 min...")
-        cmd_set_sleep(1)
-        time.sleep(60)
+        sleep_time = 60
+        do_the_stuff(serial, JSON_FILE, sleep_time)
+        #do_the_stuff(serial_outdoor, JSON_FILE_OUTDOOR, sleep_time)
+        time.sleep(sleep_time)
