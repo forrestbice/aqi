@@ -1,8 +1,16 @@
 function getData() {
   fetch("aqi.json").then(response => {
     response.json().then(data => {
-      //console.log(data);
+      console.log(data);
       updateHtml(data[data.length-1]);
+    })
+  }).catch(err => {
+    console.log(err);
+  })
+  fetch("aqi_outdoor.json").then(response => {
+    response.json().then(data => {
+      console.log(data);
+      updateOutdoorHtml(data[data.length-1]);
     })
   }).catch(err => {
     console.log(err);
@@ -27,6 +35,25 @@ function updateHtml(data) {
   document.getElementById("containerPm25").style.color = colorsPm25.text
   document.getElementById("containerPm10").style.background = colorsPm10.bg;
   document.getElementById("containerPm10").style.color = colorsPm10.text
+}
+
+function updateOutdoorHtml(data) {
+  let aqiPm25 = calcAQIpm25(data.pm25);
+  let aqiPm10 = calcAQIpm10(data.pm10);
+
+  //update HTML
+  document.getElementById("outdoorAqiPm25").innerHTML = aqiPm25;
+  document.getElementById("outdoorAqiPm10").innerHTML = aqiPm10;
+  document.getElementById("outdoorPm25").innerHTML = "(PM2.5: " + data.pm25 + " µg/m³)";
+  document.getElementById("outdoorPm10").innerHTML = "(PM10: " + data.pm10 + " µg/m³)";
+
+  //set colors
+  colorsPm25 = getColor(aqiPm25);
+  colorsPm10 = getColor(aqiPm10);
+  document.getElementById("outdoorContainerPm25").style.background = colorsPm25.bg;
+  document.getElementById("outdoorContainerPm25").style.color = colorsPm25.text
+  document.getElementById("outdoorContainerPm10").style.background = colorsPm10.bg;
+  document.getElementById("outdoorContainerPm10").style.color = colorsPm10.text
 }
 
 function getColor(aqi) {

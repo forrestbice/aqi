@@ -27,17 +27,6 @@ JSON_FILE_OUTDOOR = '/var/www/html/aqi_outdoor.json'
 MQTT_HOST = ''
 MQTT_TOPIC = '/weather/particulatematter'
 
-serial_indoor = serial.Serial()
-serial_indoor.port = "/dev/ttyUSB0"
-serial_indoor.baudrate = 9600
-serial_indoor.open()
-serial_indoor.flushInput()
-
-serial_outdoor = serial.Serial()
-serial_outdoor.port = "/dev/ttyUSB1"
-serial_outdoor.baudrate = 9600
-serial_outdoor.open()
-serial_outdoor.flushInput()
 
 
 #byte, data = 0, ""
@@ -106,7 +95,6 @@ def cmd_query_data(ser):
 def cmd_set_sleep(ser, sleep):
     mode = 0 if sleep else 1
     ser.write(construct_command(CMD_SLEEP, [0x1, mode]))
-    ser.write(construct_command(CMD_SLEEP, [0x1, mode]))
     read_response(ser)
 
 
@@ -135,13 +123,14 @@ def pub_mqtt(jsonrow):
         json.dump(jsonrow, f)
 
 
-def do_the_stuff(ser, json_file, sleep_duration):
-    # global data, sleep_time
+def do_the_stuff(ser, json_file):
+    sensor_name = "Indoor Sensor" if ser == serial_indoor else "Outdoor Sensor"
     cmd_set_sleep(ser, 0)
     for t in range(15):
         values = cmd_query_data(ser)
+        print("loop", values)
         if values is not None and len(values) == 2:
-            print("PM2.5: ", values[0], ", PM10: ", values[1])
+            print(sensor_name, ": PM2.5: ", values[0], ", PM10: ", values[1])
             time.sleep(2)
     # open stored data
     try:
@@ -160,22 +149,37 @@ def do_the_stuff(ser, json_file, sleep_duration):
         json.dump(data, outfile)
     if MQTT_HOST != '':
         pub_mqtt(jsonrow)
-    mins = sleep_duration / 60
-    print("Putting ", ser, "to sleep for ", mins, " minutes...")
     cmd_set_sleep(ser, 1)
 
 
+serial_indoor = serial.Serial()
+serial_indoor.port = "/dev/ttyUSB0"
+serial_indoor.baudrate = 9600
+serial_indoor.open()
+serial_indoor.flushInput()
+
+serial_outdoor = serial.Serial()
+serial_outdoor.port = "/dev/ttyUSB1"
+serial_outdoor.baudrate = 9600
+serial_outdoor.open()
+serial_outdoor.flushInput()
+
+cmd_set_sleep(serial_indoor, 0)
+cmd_set_sleep(serial_outdoor, 0)
+cmd_firmware_ver(serial_indoor)
+cmd_firmware_ver(serial_outdoor)
+cmd_set_working_period(serial_indoor, PERIOD_CONTINUOUS)
+cmd_set_working_period(serial_outdoor, PERIOD_CONTINUOUS)
+cmd_set_mode(serial_indoor, MODE_QUERY)
+cmd_set_mode(serial_outdoor, MODE_QUERY)
+
 if __name__ == "__main__":
-    cmd_set_sleep(serial_indoor, 0)
-    cmd_set_sleep(serial_outdoor, 0)
-    cmd_firmware_ver(serial_indoor)
-    cmd_firmware_ver(serial_outdoor)
-    cmd_set_working_period(serial_indoor, PERIOD_CONTINUOUS)
-    cmd_set_working_period(serial_outdoor, PERIOD_CONTINUOUS)
-    cmd_set_mode(serial_indoor, MODE_QUERY)
-    cmd_set_mode(serial_outdoor, MODE_QUERY)
     while True:
-        sleep_time = 60
-        do_the_stuff(serial_indoor, JSON_FILE, sleep_time)
-        # do_the_stuff(serial_outdoor, JSON_FILE_OUTDOOR, sleep_time)
+        print("looped Sleeping")
+        do_the_stuff(serial_indoor, JSON_FILE)
+        do_the_stuff(serial_outdoor, JSON_FILE_OUTDOOR)
+        sleep_time = 10
+        mins = sleep_time / 60
+        print("Putting sensors to sleep for ", mins, " minutes...")
         time.sleep(sleep_time)
+        print("Done Sleeping")

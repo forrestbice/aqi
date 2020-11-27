@@ -8,9 +8,10 @@
     <link rel='stylesheet' href='style.css'>
   </head>
   <body>
+    <h1>AQI</h1>
+    <p class='time' id="time"></p>
     <div class="container">
-      <h1>AQI</h1>
-      <p class='time' id="time"></p>
+      <h2 class='label' id="label">Indoor</h2>
       <div class='aqi-container' id="containerPm25">
           <div class='aqi-label'>AQI (PM2.5)</div>
           <div class='aqi' id="aqiPm25"></div>
@@ -20,6 +21,19 @@
           <div class='aqi-label'>AQI (PM10)</div>
           <div class='aqi' id="aqiPm10"></div>
           <div class='pm-label' id="pm10"></div>
+      </div>
+    </div>
+    <div class="container">
+      <h2 class='label' id="outdoorLabel">Outdoor</h2>
+      <div class='aqi-container' id="outdoorContainerPm25">
+          <div class='aqi-label'>AQI (PM2.5)</div>
+          <div class='aqi' id="outdoorAqiPm25"></div>
+          <div class='pm-label' id="outdoorPm25"></div>
+      </div>
+      <div class='aqi-container' id="outdoorContainerPm10">
+          <div class='aqi-label'>AQI (PM10)</div>
+          <div class='aqi' id="outdoorAqiPm10"></div>
+          <div class='pm-label' id="outdoorPm10"></div>
       </div>
     </div>
   </body>
